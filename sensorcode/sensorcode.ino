@@ -304,18 +304,54 @@ cMyLoRaWAN::NetSaveSessionInfo(
  // save Info somewhere.
 }
 void
-cMyLoRaWAN::NetSaveSessionState(const SessionState &State) {
- // save State somwwhere. Note that it's often the same;
- // often only the frame counters change.
+cMyLoRaWAN::NetSaveSessionInfo(
+    const SessionInfo &Info,
+    const uint8_t *pExtraInfo,
+    size_t nExtraInfo
+    ) {
+    // save Info somewhere.
+    theFram.saveField(McciCatena::cFramStorage::kDevAddr, Info.V2.DevAddr);
+    theFram.saveField(McciCatena::cFramStorage::kNetID, Info.V2.NetID);
+    theFram.saveField(McciCatena::cFramStorage::kNwkSKey, Info.V2.NwkSKey);
+    theFram.saveField(McciCatena::cFramStorage::kAppSKey, Info.V2.AppSKey);
+  
+
 }
+
+void
+cMyLoRaWAN::NetSaveSessionState(const SessionState &State) {
+    // save State somwwhere. Note that it's often the same;
+    // often only the frame counters change.
+    theFram.saveField(McciCatena::cFramStorage::kLmicSessionState, State);
+
+}
+
 bool
 cMyLoRaWAN::NetGetSessionState(SessionState &State) {
- // either fetch SessionState from somewhere and return true or...
- return false;
+    // either fetch SessionState from somewhere and return true or...
+    return theFram.getField(McciCatena::cFramStorage::kLmicSessionState, State);
 }
+
 bool
-cMyLoRaWAN::GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo* Info) {
- //either get ABP provisioning info from somewhere and return true or...
- return false;
+cMyLoRaWAN::GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo* Info){
+  //either get ABP provisioning info from somewhere and return true or...
+  if (!Info) return false;//Library calls with null pointer sometimes
+   SessionState temporaryState;
+   if (!theFram.getField(McciCatena::cFramStorage::kLmicSessionState, temporaryState)) return false;
+   if (!theFram.getField(McciCatena::cFramStorage::kNwkSKey, Info->NwkSKey)) return false;
+   if (!theFram.getField(McciCatena::cFramStorage::kAppSKey, Info->AppSKey)) return false;
+   if (!theFram.getField(McciCatena::cFramStorage::kDevAddr, Info->DevAddr)) return false;
+   //Use the temporary SessionState to get important values from it.
+
+   Info->FCntUp = temporaryState.V1.FCntUp;
+   Info->FCntDown = temporaryState.V1.FCntDown;
+
+   return true;
+
+
+
+
+
 }
+
 //----------LORAWAN END-----------------------------------------------------------------------------
