@@ -40,3 +40,5 @@ client.on_message= on_message                      #attach function to callback
 client.connect(broker_address,port,60) #connect
 client.subscribe(f"v3/{user}/devices/+/up") #subscribe
 client.loop_forever() #then keep listening forever
+
+#Test
