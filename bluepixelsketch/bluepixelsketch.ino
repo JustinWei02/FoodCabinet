@@ -43,8 +43,9 @@ void setup() {
   myCAM.clear_fifo_flag();
 }
 
+
 void loop() {
-  // Capture image every 20 seconds
+  // Capture image every 5 seconds
   delay(5000);
 
   myCAM.flush_fifo();
@@ -62,7 +63,7 @@ void loop() {
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
   uint8_t VH, VL;
-  uint32_t count = 0, bluePixels = 0, totalPixels = 0;
+  uint32_t count = 0, blackPixels = 0, totalPixels = 0;
 
   // Assuming BMP data begins after a specific header length
   for (int i = 0; i < BMPIMAGEOFFSET; i++) SPI.transfer(0x00); // Skip BMP header
@@ -76,10 +77,13 @@ void loop() {
       if ((totalPixels++ % 4) == 0) { // Sample every fourth pixel
         // Convert two bytes to a single 16-bit pixel value (RGB565)
         uint16_t pixel = (VH << 8) | VL;
+        uint8_t r = (pixel >> 11) & 0x1F; // Extracting red component
+        uint8_t g = (pixel >> 5) & 0x3F; // Extracting green component
         uint8_t b = pixel & 0x1F; // Extracting blue component
 
-        if (b > 12) { // Blue threshold, adjust as needed for sensitivity
-          bluePixels++;
+        // Check if the pixel is black or very close to black
+        if (r <= 8 && g <= 8 && b <= 8) { // Thresholds for each component to be considered black
+          blackPixels++;
         }
         count++;
       }
@@ -89,9 +93,10 @@ void loop() {
   myCAM.CS_HIGH();
   myCAM.clear_fifo_flag();
 
-  // Calculate and print the percentage of blue pixels
-  float bluePercentage = (bluePixels / (float)count) * 100;
-  Serial.print("Blue Pixels: ");
-  Serial.print(bluePercentage);
+  // Calculate and print the percentage of black pixels
+  float blackPercentage = (blackPixels / (float)count) * 100;
+  Serial.print("Black Pixels: ");
+  Serial.print(blackPercentage);
   Serial.println("%");
 }
+
