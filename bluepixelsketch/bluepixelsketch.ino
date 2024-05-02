@@ -17,6 +17,8 @@ const int CS = 12; // CS pin for ArduCAM
 
 ArduCAM myCAM( OV2640, CS ); // Assuming using OV2640
 
+int pwmPin = 13;
+
 void setup() {
   Wire.begin();
   Serial.begin(115200);
@@ -27,6 +29,8 @@ void setup() {
 
   pinMode(CS, OUTPUT);
   digitalWrite(CS, HIGH);
+  
+  pinMode(pwmPin, OUTPUT);
 
   SPI.begin();
   myCAM.write_reg(ARDUCHIP_TEST1, 0x55);
@@ -63,10 +67,18 @@ void loop() {
   myCAM.CS_LOW();
   myCAM.set_fifo_burst();
   uint8_t VH, VL;
-  uint32_t count = 0, blackPixels = 0, totalPixels = 0;
+  uint32_t count = 0, targetColorPixels = 0, totalPixels = 0;
 
   // Assuming BMP data begins after a specific header length
   for (int i = 0; i < BMPIMAGEOFFSET; i++) SPI.transfer(0x00); // Skip BMP header
+
+  // Define threshold ranges for each color component
+  uint8_t minR = 150; // Minimum red value
+  uint8_t maxR = 175; // Maximum red value
+  uint8_t minG = 155; // Minimum green value
+  uint8_t maxG = 175; // Maximum green value
+  uint8_t minB = 150; // Minimum blue value
+  uint8_t maxB = 170; // Maximum blue value
 
   // Read every fourth pixel to simulate downscaling
   for (int i = 0; i < 160; i++) {
@@ -81,9 +93,9 @@ void loop() {
         uint8_t g = (pixel >> 5) & 0x3F; // Extracting green component
         uint8_t b = pixel & 0x1F; // Extracting blue component
 
-        // Check if the pixel is black or very close to black
-        if (r <= 8 && g <= 8 && b <= 8) { // Thresholds for each component to be considered black
-          blackPixels++;
+        // Check if the pixel falls within the defined threshold ranges
+        if (r >= minR && r <= maxR && g >= minG && g <= maxG && b >= minB && b <= maxB) {
+          targetColorPixels++;
         }
         count++;
       }
@@ -93,10 +105,9 @@ void loop() {
   myCAM.CS_HIGH();
   myCAM.clear_fifo_flag();
 
-  // Calculate and print the percentage of black pixels
-  float blackPercentage = (blackPixels / (float)count) * 100;
-  Serial.print("Black Pixels: ");
-  Serial.print(blackPercentage);
+  // Calculate and print the percentage of pixels within the defined threshold ranges
+  float targetColorPercentage = (targetColorPixels / (float)count) * 100;
+  Serial.print("Pixels within the threshold ranges: ");
+  Serial.print(targetColorPercentage);
   Serial.println("%");
 }
-
