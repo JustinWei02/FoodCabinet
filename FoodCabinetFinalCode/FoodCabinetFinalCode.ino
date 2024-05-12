@@ -19,14 +19,15 @@
 #define BMPIMAGEOFFSET 66
 
 uint64_t lastTime = 0;
+uint64_t timer = 0; //timer for when door is closed
 uint32_t bufferLength = 8;
 static uint8_t messageBuffer[8] = {0, 1, 2, 3, 4, 5, 6, 7};
 
-struct __attribute__((__packed__)) capacity{
+struct __attribute__((__packed__)) Capacity{
   float foodPercentage;
 };
 
-capacity myfoodAmount; 
+Capacity myfoodAmount; 
 
 #ifdef __cplusplus
 extern "C"{
@@ -45,11 +46,12 @@ void myStatusCallback(void * data, bool success){
 #endif
 
 class cMyLoRaWAN : public Arduino_LoRaWAN_ttn {
-using Super = Arduino_LoRaWAN_ttn;
-McciCatena::cFram32k theFram;
+
 public:
-  bool begin(const Arduino_LoRaWAN::lmic_pinmap& map);
+    bool begin(const Arduino_LoRaWAN::lmic_pinmap& map);
     cMyLoRaWAN() {};
+    using Super = Arduino_LoRaWAN_ttn;
+    McciCatena::cFram32k theFram; 
 
 protected:
     // you'll need to provide implementations for each of the following.
@@ -60,19 +62,6 @@ protected:
     virtual bool GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo*) override;
 
 };
-
-bool cMyLoRaWAN::begin(const Arduino_LoRaWAN::lmic_pinmap&  map){
-     if(!theFram.begin()){
-        Serial.println("Fram begin fail");
-      }
-      if(
-      !theFram.initialize()){
-        Serial.println("Fram not valid");
-      }
-      if (!Super::begin(map))
-        return false;
-      return true;
-                }
 
 // set up the data structures.
 cMyLoRaWAN myLoRaWAN {};
@@ -109,10 +98,10 @@ bool doorChanged = false; // Flag to track door state change
 unsigned long doorChangeTime = 0; // Time of last door state change
 const unsigned long doorTimeout = 10000; // Timeout in milliseconds (1 minute)
 bool doorOpen=false; //is the door open
-int doorchangeCounter=0;
 
 void setup() {
   Wire.begin();
+  
   Serial.begin(115200);
   while (!Serial); // Wait for Serial port to connect.
 
@@ -127,6 +116,19 @@ void setup() {
   SPI.begin();
   myCAM.write_reg(ARDUCHIP_TEST1, 0x55);
 
+  uint8_t temp = myCAM.read_reg(ARDUCHIP_TEST1);
+  Serial.print("temp is ");
+    Serial.println(temp, HEX);
+  if (temp != 0x55) {
+    
+    Serial.println("SPI Error!");
+    while (1);
+  }
+
+  Serial.println("SPI Success final");
+  //while(1);
+
+  Serial.begin(115200);
    {
       uint64_t lt = millis();
     while(!Serial && millis() - lt < 5000);
@@ -139,17 +141,13 @@ void setup() {
       Serial.println("Provisioned for something");
     else
       Serial.println("Not provisioned.");
-
-     //Load data into the data structure.
-    myfoodAmount.foodPercentage=0;
-
-    myLoRaWAN.SendBuffer((uint8_t *)&myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
     
-  uint8_t temp = myCAM.read_reg(ARDUCHIP_TEST1);
-  if (temp != 0x55) {
-    Serial.println("SPI Error!");
-    while (1);
-  }
+
+    //Load data into the data structure.
+    float foodPercentage = 0;
+    memcpy(&myfoodAmount.foodPercentage, &foodPercentage, 4);
+    myLoRaWAN.SendBuffer((uint8_t *) &myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
+    
 
   // Initialize camera
   myCAM.set_format(BMP);
@@ -161,105 +159,118 @@ void setup() {
   LowPower.attachInterruptWakeup(doorPin, doorStateChanged, CHANGE); // Attach wakeup interrupt to door status change
 
   Serial.println("System going to sleep...");
+  LowPower.sleep();
   delay(100); // Give some time for serial to print
 }
 
 void loop() {
   // Check if door state changed
   myLoRaWAN.loop();
- 
 
   if (doorChanged) {
-    //Serial.println("door state change");
     doorChanged = false;
+    timer = 0; // restart the timer each time the door is opened or closed
     if (digitalRead(doorPin)==0){
       doorOpen=false;
-      //Serial.println("door is closed");
+      Serial.println("door is closed");
+      timer = millis(); // start timer to track how long it's been since the door closed
       }
     else{
       doorOpen=true;
-      //Serial.println("door is open");
+      Serial.println("door is open");
       }
   }
   
+  // Only takes picture if it's been 10 seconds after door closed
+  if (timer != 0 && millis() - timer > 10000){
+    // If the door is closed retrieve image and calculate black pixel
+    if (!doorOpen) {
+      Serial.println("Capturing Image");
+      
+      analogWrite(pwmPin, 10); // Example: Turn on a device
+      delay(5000); // Wait 5 seconds for the device to stabilize
 
-  // If the door is closed retrieve image and calculate black pixel
-
-  if ((doorOpen == 0)) {
-    Serial.println("Capturing Image");
-    
-    analogWrite(pwmPin, 10); // Example: Turn on a device
-    delay(5000); // Wait 5 seconds for the device to stabilize
-
-    myCAM.flush_fifo();
-    myCAM.clear_fifo_flag();
-    myCAM.start_capture();
-
-    while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
-    uint32_t length = myCAM.read_fifo_length();
-    if (length > MAX_FIFO_SIZE || length == 0) {
+      myCAM.flush_fifo();
       myCAM.clear_fifo_flag();
-      return;
-    }
+      myCAM.start_capture();
 
-    // Read BMP data
-    myCAM.CS_LOW();
-    myCAM.set_fifo_burst();
-    uint8_t VH, VL;
-    uint32_t count = 0, blackPixels = 0, totalPixels = 0;
+      while (!myCAM.get_bit(ARDUCHIP_TRIG, CAP_DONE_MASK));
+      uint32_t length = myCAM.read_fifo_length();
+      if (length > MAX_FIFO_SIZE || length == 0) {
+        myCAM.clear_fifo_flag();
+        return;
+      }
 
-    // Assuming BMP data begins after a specific header length
-    for (int i = 0; i < BMPIMAGEOFFSET; i++) SPI.transfer(0x00); // Skip BMP header
+      // Read BMP data
+      myCAM.CS_LOW();
+      myCAM.set_fifo_burst();
+      uint8_t VH, VL;
+      uint32_t count = 0, blackPixels = 0, totalPixels = 0;
 
-    // Read every fourth pixel to simulate downscaling
-    for (int i = 0; i < 160; i++) {
-      for (int j = 0; j < 120; j++) {
-        VH = SPI.transfer(0x00); // Higher byte
-        VL = SPI.transfer(0x00); // Lower byte
+      // Assuming BMP data begins after a specific header length
+      for (int i = 0; i < BMPIMAGEOFFSET; i++) SPI.transfer(0x00); // Skip BMP header
 
-        if ((totalPixels++ % 4) == 0) { // Sample every fourth pixel
-          // Convert two bytes to a single 16-bit pixel value (RGB565)
-          uint16_t pixel = (VH << 8) | VL;
-          uint8_t r = (pixel >> 11) & 0x1F; // Extracting red component
-          uint8_t g = (pixel >> 5) & 0x3F; // Extracting green component
-          uint8_t b = pixel & 0x1F; // Extracting blue component
+      // Read every fourth pixel to simulate downscaling
+      for (int i = 0; i < 160; i++) {
+        for (int j = 0; j < 120; j++) {
+          VH = SPI.transfer(0x00); // Higher byte
+          VL = SPI.transfer(0x00); // Lower byte
 
-          // Check if the pixel is black or very close to black
-          if (r <= 24 && g <= 24 && b <= 24) { // Thresholds for each component to be considered black
-            blackPixels++;
+          if ((totalPixels++ % 4) == 0) { // Sample every fourth pixel
+            // Convert two bytes to a single 16-bit pixel value (RGB565)
+            uint16_t pixel = (VH << 8) | VL;
+            uint8_t r = (pixel >> 11) & 0x1F; // Extracting red component
+            uint8_t g = (pixel >> 5) & 0x3F; // Extracting green component
+            uint8_t b = pixel & 0x1F; // Extracting blue component
+
+            // Check if the pixel is black or very close to black
+            if (r <= 24 && g <= 24 && b <= 24) { // Thresholds for each component to be considered black
+              blackPixels++;
+            }
+            count++;
           }
-          count++;
         }
       }
+
+      myCAM.CS_HIGH();
+      myCAM.clear_fifo_flag();
+
+      // Calculate and print the percentage of black pixels
+      float blackPercentage = (blackPixels / (float)count) * 100;
+      Serial.print("Black Pixels: ");
+      Serial.print(blackPercentage);
+      Serial.println("%");
+
+      analogWrite(pwmPin, 0); // Example: Turn off the device
+
+      float foodPercentage = 100 - blackPercentage;
+      memcpy(&myfoodAmount.foodPercentage, &foodPercentage, 4);
+      myLoRaWAN.SendBuffer((uint8_t *) &myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
     }
-
-    myCAM.CS_HIGH();
-    myCAM.clear_fifo_flag();
-
-    // Calculate and print the percentage of black pixels
-    float blackPercentage = (blackPixels / (float)count) * 100;
-    Serial.print("Black Pixels: ");
-    Serial.print(blackPercentage);
-    Serial.println("%");
-
-    analogWrite(pwmPin, 0); // Example: Turn off the device
-    doorchangeCounter=0;
-
-    myfoodAmount.foodPercentage=100-blackPercentage;
-    myLoRaWAN.SendBuffer((uint8_t *)&myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
-
-     // Sleep for 15 seconds
+    timer = 0; // reset timer
+    
+    Serial.println("System going to sleep...");
+    LowPower.sleep();
   }
-  Serial.println("sleeping for 15 seconds");
-  //USBDevice.detach();
-  LowPower.sleep(15000);
-  //USBDevice.attach();
 }
 
 void doorStateChanged() {
   doorChanged = true;
   doorChangeTime = millis();
 }
+
+bool cMyLoRaWAN::begin(const Arduino_LoRaWAN::lmic_pinmap&  map){
+     if(!theFram.begin()){
+        Serial.println("Fram begin fail");
+      }
+      if(
+      !theFram.initialize()){
+        Serial.println("Fram not valid");
+      }
+      if (!Super::begin(map))
+        return false;
+      return true;
+                }
 
 bool
 cMyLoRaWAN::GetOtaaProvisioningInfo(
@@ -284,7 +295,6 @@ cMyLoRaWAN::NetSaveSessionInfo(
     theFram.saveField(McciCatena::cFramStorage::kNetID, Info.V2.NetID);
     theFram.saveField(McciCatena::cFramStorage::kNwkSKey, Info.V2.NwkSKey);
     theFram.saveField(McciCatena::cFramStorage::kAppSKey, Info.V2.AppSKey);
-  
 
 }
 
@@ -308,6 +318,7 @@ cMyLoRaWAN::GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo* Info){
   if (!Info) return false;//Library calls with null pointer sometimes
    SessionState temporaryState;
    if (!theFram.getField(McciCatena::cFramStorage::kLmicSessionState, temporaryState)) return false;
+   if (!theFram.getField(McciCatena::cFramStorage::kNetID, Info->NetID)) return false;
    if (!theFram.getField(McciCatena::cFramStorage::kNwkSKey, Info->NwkSKey)) return false;
    if (!theFram.getField(McciCatena::cFramStorage::kAppSKey, Info->AppSKey)) return false;
    if (!theFram.getField(McciCatena::cFramStorage::kDevAddr, Info->DevAddr)) return false;
@@ -323,3 +334,5 @@ cMyLoRaWAN::GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo* Info){
 
 
 }
+
+
