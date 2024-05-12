@@ -208,7 +208,7 @@ void loop() {
       //First Camera Image Capture
       Serial.println("Capturing Image1");
       
-      analogWrite(pwmPin, 10); // Example: Turn on a device
+      analogWrite(pwmPin, 20); //Turn on lights
       delay(5000); // Wait 5 seconds for the device to stabilize
 
       myCAM1.flush_fifo();
@@ -273,7 +273,7 @@ void loop() {
       delay(3000);
       Serial.println("Capturing Image2");
       
-      analogWrite(pwmPin, 10); // Example: Turn on a device
+      analogWrite(pwmPin, 20); // turn on lights
       delay(5000); // Wait 5 seconds for the device to stabilize
 
       myCAM2.flush_fifo();
