@@ -91,7 +91,7 @@ const cMyLoRaWAN::lmic_pinmap myPinMap = {
 
 // Define CS pins for two cameras
 const int CS_CAM1 = 12; // CS pin for camera 1
-const int CS_CAM2 = 13; // CS pin for camera 2
+const int CS_CAM2 = 10; // CS pin for camera 2
 
 const int doorPin = 11; // pin for magnetic door sensor
 
@@ -183,6 +183,7 @@ void setup() {
 }
 
 void loop() {
+  
   // Check if door state changed
   myLoRaWAN.loop();
 
@@ -208,7 +209,7 @@ void loop() {
       //First Camera Image Capture
       Serial.println("Capturing Image1");
       
-      analogWrite(pwmPin, 20); //Turn on lights
+      analogWrite(pwmPin, 10); // Example: Turn on a device
       delay(5000); // Wait 5 seconds for the device to stabilize
 
       myCAM1.flush_fifo();
@@ -245,7 +246,7 @@ void loop() {
             uint8_t b = pixel & 0x1F; // Extracting blue component
 
             // Check if the pixel is black or very close to black
-            if (r <= 24 && g <= 24 && b <= 24) { // Thresholds for each component to be considered black
+            if (r <= 18 && g <= 36 && b <= 18) { // Thresholds for each component to be considered black
               blackPixels1++;
             }
             count1++;
@@ -266,14 +267,14 @@ void loop() {
 
       float foodPercentage1 = 100 - blackPercentage1;
       memcpy(&myfoodAmount.foodPercentage1, &foodPercentage1, 4);
-      myLoRaWAN.SendBuffer((uint8_t *) &myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
+      //myLoRaWAN.SendBuffer((uint8_t *) &myfoodAmount, sizeof(myfoodAmount), myStatusCallback, NULL, false, 1);
 
 
       //Second Camera image capture
       delay(3000);
       Serial.println("Capturing Image2");
       
-      analogWrite(pwmPin, 20); // turn on lights
+      analogWrite(pwmPin, 10); // Example: Turn on a device
       delay(5000); // Wait 5 seconds for the device to stabilize
 
       myCAM2.flush_fifo();
@@ -310,7 +311,7 @@ void loop() {
             uint8_t b = pixel & 0x1F; // Extracting blue component
 
             // Check if the pixel is black or very close to black
-            if (r <= 24 && g <= 24 && b <= 24) { // Thresholds for each component to be considered black
+            if (r <= 18 && g <= 36 && b <= 18) { // Thresholds for each component to be considered black
               blackPixels2++;
             }
             count2++;
@@ -419,5 +420,6 @@ cMyLoRaWAN::GetAbpProvisioningInfo(Arduino_LoRaWAN::AbpProvisioningInfo* Info){
 
 
 }
+
 
 
